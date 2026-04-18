@@ -5,8 +5,35 @@ import json, urllib.request, sys
 BASE = "https://www.atg.se/services/racinginfo/v1/api"
 DATE = "2026-04-19"
 TRACK = 31  # Årjäng
-RACES = [4, 5, 6, 7, 8, 9, 10]  # 7 lopp som om det vore V75
+TRACK_NAME = "Årjäng"
+RACES = list(range(1, 11))  # Hela dagen, 10 lopp
 NOT_BETTABLE = 9999  # ATG:s placeholder för "odds ej satt"
+
+# Spelformer för denna dag (verifierat mot ATG:s games-endpoints).
+# Tuple: (visningsnamn, beskrivning, vilka lopp som ingår)
+BETTING_FORMS = [
+    (
+        "Grand Slam 75 (dagens V75-spel)",
+        "Poolspel: välj rätt häst i varje ingående lopp. Alla rätt ger stor utdelning. "
+        "Dagens GS75 omfattar 7 lopp.",
+        [4, 5, 6, 7, 8, 9, 10],
+    ),
+    (
+        "V4",
+        "Poolspel: välj rätt häst i 4 på varandra följande lopp. Mindre kombinatorik än V75.",
+        [7, 8, 9, 10],
+    ),
+    (
+        "V3",
+        "Poolspel: välj rätt häst i 3 på varandra följande lopp. Billigare att spela brett.",
+        [8, 9, 10],
+    ),
+    (
+        "DD — Dagens Dubbel",
+        "Välj rätt häst i 2 lopp. Enklaste kombinationsspelet.",
+        [9, 10],
+    ),
+]
 
 
 def get(url):
@@ -223,11 +250,41 @@ def render_html(races):
   .match-demo, .contra-demo {{ font-size: 11px; padding: 1px 8px; border-radius: 999px; font-weight: 600; }}
   .match-demo {{ background: #dcfce7; color: #166534; }}
   .contra-demo {{ background: #fde2e2; color: #991b1b; }}
+  .day-overview {{ background: white; border-radius: 14px; padding: 20px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }}
+  .day-overview h2 {{ margin: 0 0 10px; font-size: 18px; }}
+  .day-overview p {{ font-size: 14px; color: #333; margin: 8px 0; }}
+  .day-overview table.forms {{ width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }}
+  .day-overview table.forms th, .day-overview table.forms td {{ text-align: left; padding: 8px; border-bottom: 1px solid #eee; vertical-align: top; }}
+  .day-overview table.forms th {{ color: #888; font-weight: 600; }}
+  .day-overview table.forms td:first-child {{ white-space: nowrap; }}
+  .day-overview .disclaimer {{ color: #777; font-size: 12px; font-style: italic; }}
   footer {{ color: #999; font-size: 12px; margin-top: 32px; text-align: center; }}
 </style></head>
 <body>
-  <h1>V75-tips · Årjäng</h1>
+  <h1>V75-tips · {TRACK_NAME}</h1>
   <div class="sub">{DATE} · auto-rankade toppval per lopp baserat på publik statistik</div>
+
+  <section class="day-overview">
+    <h2>Dagens program på {TRACK_NAME}</h2>
+    <p>
+      Sammanlagt 10 lopp körs. <b>Lopp 1–3</b> är "singelspel" — du satsar på vinnare, plats eller enklare
+      kombinationer (komb, tvilling, trio) inom varje enskilt lopp. Det som vi brukar kalla "V75" är det
+      stora poolspelet som på den här banan heter <b>Grand Slam 75 (GS75)</b>, och som körs över 7 lopp:
+    </p>
+    <table class="forms">
+      <tr><th>Spelform</th><th>Lopp</th><th>Vad det innebär</th></tr>
+      {''.join(
+          f'<tr><td><b>{name}</b></td><td>{", ".join(str(x) for x in lopp)}</td><td>{desc}</td></tr>'
+          for name, desc, lopp in BETTING_FORMS
+      )}
+    </table>
+    <p class="disclaimer">
+      Vår modell rankar varje av de 10 loppen oavsett spelform — men styrkan (läs: varians i score mellan
+      hästarna) är störst i lopp där fältet är tunt eller toppningen glasklar. Använd rankingen som
+      underlag, inte som recept.
+    </p>
+  </section>
+
   {''.join(cards)}
 
   <details class="info" open>
