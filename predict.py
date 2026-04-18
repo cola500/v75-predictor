@@ -14,35 +14,59 @@ def get(url):
         return json.load(r)
 
 
-def score_horse(start):
-    """Enkel score: vinstprocent karriär * 60 + senaste års earnings/1e6 * 20 + recent form."""
+def year_win_rate(stats, year):
+    """Hämta vinstprocent från statistics.years.{year}. 0 om saknas."""
+    y = stats.get("years", {}).get(year, {})
+    st = y.get("starts", 0) or 1
+    return y.get("placement", {}).get("1", 0) / st
+
+
+def post_position_bonus(pos, start_method):
+    """Inre spår gynnar vid volte; mindre effekt vid autostart."""
+    if not pos:
+        return 0
+    if start_method == "volte":
+        # Spår 1 = 1.0, spår 8+ = 0. Linjär.
+        return max(0, (8 - pos)) / 7
+    # autostart: halv effekt, räcker längre ut
+    return max(0, (12 - pos)) / 22
+
+
+def score_horse(start, start_method):
     h = start["horse"]
     stats = h.get("statistics", {})
     life = stats.get("life", {})
     starts = life.get("starts", 0) or 1
-    wins = life.get("placement", {}).get("1", 0)
-    win_rate = wins / starts
+    win_rate = life.get("placement", {}).get("1", 0) / starts
     recent = stats.get("years", {}).get("2026", {})
-    # ATG returnerar earnings i öre. 1 kr = 100 öre. Räkna om till tusen kr (tkr).
+    # ATG returnerar earnings i öre. 1 kr = 100 öre. Räkna om till tkr.
     recent_earnings_tkr = (recent.get("earnings", 0) or 0) / 100 / 1000
-    # Behåll en score-komponent som är jämförbar med tidigare värden (~0-30-ish).
-    recent_earnings = recent_earnings_tkr / 10
+    recent_earnings = recent_earnings_tkr / 10  # skalad för score
     recent_starts = recent.get("starts", 0)
     recent_wins = recent.get("placement", {}).get("1", 0)
     recent_form = (recent_wins / recent_starts) if recent_starts else 0
 
-    # Tränarens vinstprocent senaste kompletta år
-    tr = h.get("trainer", {}).get("statistics", {}).get("years", {}).get("2025", {})
-    tr_starts = tr.get("starts", 0) or 1
-    tr_wins = tr.get("placement", {}).get("1", 0)
-    tr_rate = tr_wins / tr_starts
+    tr_rate = year_win_rate(h.get("trainer", {}).get("statistics", {}), "2025")
+    dr_rate = year_win_rate((start.get("driver") or {}).get("statistics", {}), "2025")
+    pp = start.get("postPosition")
+    post_factor = post_position_bonus(pp, start_method)
 
-    score = win_rate * 60 + recent_earnings * 20 + recent_form * 15 + tr_rate * 5
+    score = (
+        win_rate * 60
+        + recent_earnings * 20
+        + recent_form * 15
+        + dr_rate * 10
+        + tr_rate * 5
+        + post_factor * 5
+    )
     return score, {
         "life_win_rate": round(win_rate, 3),
         "recent_earnings_kr": int(recent_earnings_tkr * 1000),
         "recent_form": round(recent_form, 3),
         "trainer_win_rate": round(tr_rate, 3),
+        "driver_win_rate": round(dr_rate, 3),
+        "post_position": pp,
+        "start_method": start_method,
     }
 
 
@@ -65,11 +89,12 @@ def fetch_odds(race_id):
 def rank_race(race_id):
     race = get(f"{BASE}/races/{race_id}")
     odds_map = fetch_odds(race_id)
+    start_method = race.get("startMethod", "volte")
     rows = []
     for s in race.get("starts", []):
         if s.get("scratched"):
             continue
-        score, parts = score_horse(s)
+        score, parts = score_horse(s, start_method)
         rows.append({
             "nr": s["number"],
             "name": s["horse"]["name"],
@@ -99,10 +124,14 @@ def motivation(parts):
         return f"Vinner {int(p['life_win_rate']*100)} % av sina starter i karriären."
     if p["recent_form"] >= 0.3:
         return f"Het form: {int(p['recent_form']*100)} % vinst 2026."
+    if p["driver_win_rate"] >= 0.2:
+        return f"Het kusk: {int(p['driver_win_rate']*100)} % vinst 2025."
     if p["recent_earnings_kr"] >= 50000:
         return f"Tjänat {kr(p['recent_earnings_kr'])} 2026 — bland de bäst betalda i fältet."
+    if p["start_method"] == "volte" and (p["post_position"] or 99) <= 3:
+        return f"Innerspår {p['post_position']} vid volte — kan rusa ledningen direkt."
     if p["trainer_win_rate"] >= 0.15:
-        return f"Tränas av en av stallmakarna i toppskiktet ({int(p['trainer_win_rate']*100)} % vinst 2025)."
+        return f"Tränas av ett toppstall ({int(p['trainer_win_rate']*100)} % vinst 2025)."
     return "Toppscore i fältet på sammanvägd statistik."
 
 
@@ -126,7 +155,7 @@ def render_html(races):
             <li class="pick pick-{i}">
               <div class="rank">{i}</div>
               <div class="who">
-                <div class="nr">Nr {r['nr']}</div>
+                <div class="nr">Nr {r['nr']} · Spår {r['parts']['post_position']} ({r['parts']['start_method']})</div>
                 <div class="name">{r['name']}</div>
                 <div class="meta">Kusk: {r['driver']} · Tränare: {r['trainer']}</div>
               </div>
@@ -209,18 +238,22 @@ def render_html(races):
       <tr><td>Karriärvinst%</td><td>Antal segrar genom antal starter i hästens karriär</td><td>× 60</td></tr>
       <tr><td>Intjänat 2026</td><td>Prispengar i år (i tusenlappar, delat med 10)</td><td>× 20</td></tr>
       <tr><td>Form 2026</td><td>Segrar ÷ starter i år</td><td>× 15</td></tr>
+      <tr><td>Kuskvinst% 2025</td><td>Kuskens vinstprocent föregående helår</td><td>× 10</td></tr>
       <tr><td>Tränarvinst% 2025</td><td>Tränarens vinstprocent föregående helår</td><td>× 5</td></tr>
+      <tr><td>Startspår</td><td>Inre spår gynnar vid volte (full effekt), halv effekt vid autostart</td><td>× 5</td></tr>
     </table>
     <p><b>Motiveringen</b> väljs efter vilken faktor som sticker ut mest för hästen, i prioritetsordning:</p>
     <ol>
       <li>Karriärvinst ≥ 30 % → "Vinner X % av sina starter"</li>
       <li>Form ≥ 30 % → "Het form: X % vinst 2026"</li>
+      <li>Kuskvinst ≥ 20 % → "Het kusk: X % vinst 2025"</li>
       <li>Intjänat ≥ 50 000 kr → "Tjänat X kr 2026"</li>
+      <li>Innerspår (1–3) vid volte → "Kan rusa ledningen direkt"</li>
       <li>Tränaren ≥ 15 % vinst → "Topptränare"</li>
       <li>Annars → "Toppscore på sammanvägd statistik"</li>
     </ol>
     <p><b>Marknadens topp-3</b> är de tre hästar som har lägst vinnar-odds just nu — dvs. de som spelarna tror mest på. När vår topp-3 matchar marknadens får hästen taggen <span class="match-demo">Marknadsfavorit</span>. När vi tycker annorlunda får hästen <span class="contra-demo">Avviker från marknaden</span> — spännande men mer risk.</p>
-    <p class="caveat">Enkel heuristik — ingen hänsyn till bana, startspår, väderlek eller motståndarnas relativa styrka. Fungerar som ett <i>dugligt</i> grundval, inte som garanti.</p>
+    <p class="caveat">Enkel heuristik — tittar inte på banans karaktär, väderlek, motståndarnas relativa styrka, skobyten eller senaste 3-5 starternas trend. Fungerar som ett <i>dugligt</i> grundval, inte som garanti.</p>
   </details>
 
   <footer>Experiment — ej spelråd. Data: ATG.</footer>
@@ -238,10 +271,10 @@ def main():
             p = r["parts"]
             odds_txt = f"odds={r['odds']:.2f}" if r["odds"] is not None else "odds=?"
             print(
-                f"  #{r['nr']:<2} {r['name']:<22} "
+                f"  #{r['nr']:<2} spår{p['post_position']:<2} {r['name']:<22} "
                 f"score={r['score']:<6} {odds_txt:<12} "
-                f"vinst%={p['life_win_rate']} "
-                f"intjänat={kr(p['recent_earnings_kr'])}"
+                f"kusk%={p['driver_win_rate']} "
+                f"vinst%={p['life_win_rate']}"
             )
         if market:
             mkt = ", ".join(f"#{m['nr']} {m['name']} ({m['odds']:.2f})" for m in market)
