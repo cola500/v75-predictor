@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meditation MVP</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --fg: #1f1d1a;
+    --muted: #6b6660;
+    --accent: #335c4f;
+    --warn: #b04a2f;
+    --card: #fff;
+    --border: #e5e1d8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    padding: 24px 16px 140px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .lede { color: var(--muted); margin: 0 0 24px; font-size: 0.95rem; }
+  .filters {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 16px; font-size: 0.9rem;
+  }
+  .filters button {
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 12px; cursor: pointer;
+    color: var(--fg); font: inherit;
+  }
+  .filters button.active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+  .track {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; margin-bottom: 10px;
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 12px;
+  }
+  .track .title { font-weight: 600; }
+  .track .meta { color: var(--muted); font-size: 0.88rem; }
+  .track .lic { font-size: 0.78rem; padding: 2px 8px; border-radius: 4px; }
+  .lic-cleared { background: #e3eee9; color: var(--accent); }
+  .lic-pending-review { background: #fbe6dd; color: var(--warn); }
+  .lic-blocked { background: #efd4d4; color: #7a1e1e; }
+  .track .row2 { grid-column: 1 / -1; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .track button.play, .track button.fav {
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer;
+    font: inherit; color: var(--fg);
+  }
+  .track button.play[disabled] { color: var(--muted); cursor: not-allowed; }
+  .track button.fav.on { color: var(--accent); border-color: var(--accent); }
+  .track .last-played { color: var(--muted); font-size: 0.82rem; }
+  .track .notes { color: var(--muted); font-size: 0.82rem; grid-column: 1 / -1; }
+  .track .src { font-size: 0.82rem; }
+  .track .src a { color: var(--accent); }
+
+  .player {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--card); border-top: 1px solid var(--border);
+    padding: 10px 16px; display: flex; gap: 12px; align-items: center;
+  }
+  .player .nowplaying { flex: 1; min-width: 0; }
+  .player .nowplaying .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player .nowplaying .s { font-size: 0.82rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player audio { width: 320px; max-width: 50vw; }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Meditation MVP</h1>
+<p class="lede">Innehåll först. Licens som förstklassdata. Inga blinda nedladdningar.</p>
+
+<div class="filters" id="filters">
+  <button data-filter="all" class="active">Alla</button>
+  <button data-filter="favorites">★ Favoriter</button>
+  <button data-filter="cleared">Klarerade</button>
+  <button data-filter="pending-review">Att granska</button>
+</div>
+
+<div id="library"><p class="empty">Laddar…</p></div>
+
+<div class="player">
+  <div class="nowplaying">
+    <div class="t" id="np-title">Inget spelas</div>
+    <div class="s" id="np-sub">—</div>
+  </div>
+  <audio id="audio" controls preload="none"></audio>
+</div>
+
+<script>
+const STORAGE_KEY = "meditation-mvp:v1";
+
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+
+const state = loadState();
+state.favorites = state.favorites || {};
+state.lastPlayed = state.lastPlayed || {};
+
+let catalog = null;
+let currentFilter = "all";
+
+function fmtDuration(s) {
+  if (s == null) return "okänd längd";
+  const m = Math.floor(s / 60), r = s % 60;
+  return r ? `${m}:${String(r).padStart(2,"0")}` : `${m} min`;
+}
+
+function fmtAgo(iso) {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "nyss";
+  if (min < 60) return `${min} min sedan`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h sedan`;
+  const d = Math.round(h / 24);
+  return `${d} d sedan`;
+}
+
+function trackMatchesFilter(t) {
+  if (currentFilter === "all") return true;
+  if (currentFilter === "favorites") return !!state.favorites[t.id];
+  return t.license_status === currentFilter;
+}
+
+function render() {
+  const lib = document.getElementById("library");
+  const tracks = catalog.tracks.filter(trackMatchesFilter);
+  if (!tracks.length) {
+    lib.innerHTML = '<p class="empty">Inga spår matchar filtret.</p>';
+    return;
+  }
+  lib.innerHTML = tracks.map(renderTrack).join("");
+  lib.querySelectorAll("[data-play]").forEach(b => b.onclick = () => play(b.dataset.play));
+  lib.querySelectorAll("[data-fav]").forEach(b => b.onclick = () => toggleFav(b.dataset.fav));
+}
+
+function renderTrack(t) {
+  const isFav = !!state.favorites[t.id];
+  const last = fmtAgo(state.lastPlayed[t.id]);
+  const playable = !!t.path && t.license_status !== "blocked";
+  const licLabel = {
+    "cleared": "klarerad",
+    "pending-review": "att granska",
+    "blocked": "blockerad"
+  }[t.license_status] || t.license_status;
+  const src = t.source_url
+    ? `<span class="src"><a href="${t.source_url}" target="_blank" rel="noopener">källa</a></span>`
+    : `<span class="src">${t.source}</span>`;
+  return `
+    <div class="track" data-id="${t.id}">
+      <div>
+        <div class="title">${t.title}</div>
+        <div class="meta">${t.teacher} · ${fmtDuration(t.duration_seconds)} · ${t.language} · ${t.category}</div>
+      </div>
+      <span class="lic lic-${t.license_status}">${licLabel}</span>
+      <div class="row2">
+        <button class="play" data-play="${t.id}" ${playable ? "" : "disabled"}>
+          ▶ ${playable ? "Spela" : "Ej importerad"}
+        </button>
+        <button class="fav ${isFav ? "on" : ""}" data-fav="${t.id}" title="Favorit">
+          ${isFav ? "★" : "☆"}
+        </button>
+        ${src}
+        ${last ? `<span class="last-played">senast: ${last}</span>` : ""}
+      </div>
+      ${t.notes ? `<div class="notes">${t.notes}</div>` : ""}
+    </div>
+  `;
+}
+
+function play(id) {
+  const t = catalog.tracks.find(x => x.id === id);
+  if (!t || !t.path) return;
+  const audio = document.getElementById("audio");
+  audio.src = t.path;
+  audio.play().catch(err => console.warn("play failed:", err));
+  document.getElementById("np-title").textContent = t.title;
+  document.getElementById("np-sub").textContent = `${t.teacher} · ${t.source}`;
+  state.lastPlayed[t.id] = new Date().toISOString();
+  saveState(state);
+  render();
+}
+
+function toggleFav(id) {
+  if (state.favorites[id]) delete state.favorites[id];
+  else state.favorites[id] = true;
+  saveState(state);
+  render();
+}
+
+document.getElementById("filters").addEventListener("click", e => {
+  if (e.target.tagName !== "BUTTON") return;
+  currentFilter = e.target.dataset.filter;
+  document.querySelectorAll("#filters button").forEach(b =>
+    b.classList.toggle("active", b === e.target));
+  render();
+});
+
+fetch("catalog.json")
+  .then(r => r.json())
+  .then(data => { catalog = data; render(); })
+  .catch(err => {
+    document.getElementById("library").innerHTML =
+      `<p class="empty">Kunde inte läsa catalog.json: ${err}.<br>
+       Servera mappen via <code>python3 -m http.server</code> och öppna http://localhost:8000/.</p>`;
+  });
+</script>
+</body>
+</html>

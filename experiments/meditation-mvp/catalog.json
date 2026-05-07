@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "license_statuses": {
+    "cleared": "Verified license, free to play and ship.",
+    "personal-use": "Owned/permitted personally — not redistributable.",
+    "pending-review": "Catalog entry only. Source not yet vetted, no file imported.",
+    "blocked": "Reviewed and rejected — kept as record so we don't re-import."
+  },
+  "tracks": [
+    {
+      "id": "local-breath-5min",
+      "title": "Andetagsmeditation (5 min)",
+      "teacher": "Egen inspelning",
+      "source": "Lokal",
+      "duration_seconds": 300,
+      "category": "breath",
+      "language": "sv",
+      "path": "tracks/placeholder-breath-5min.mp3",
+      "source_url": null,
+      "license": "personal-use",
+      "license_status": "cleared",
+      "attribution": "Egen inspelning, ej för distribution.",
+      "notes": "Platshållare — tyst MP3 för UI-demo. Byts ut mot riktig fil.",
+      "added": "2026-05-07"
+    },
+    {
+      "id": "local-bodyscan-10min",
+      "title": "Body scan (10 min)",
+      "teacher": "Egen inspelning",
+      "source": "Lokal",
+      "duration_seconds": 600,
+      "category": "body-scan",
+      "language": "sv",
+      "path": "tracks/placeholder-bodyscan-10min.mp3",
+      "source_url": null,
+      "license": "personal-use",
+      "license_status": "cleared",
+      "attribution": "Egen inspelning, ej för distribution.",
+      "notes": "Platshållare — tyst MP3 för UI-demo. Byts ut mot riktig fil.",
+      "added": "2026-05-07"
+    },
+    {
+      "id": "external-freemindfulness-example",
+      "title": "Exempel: Free Mindfulness Project — short body scan",
+      "teacher": "okänd (ska verifieras)",
+      "source": "Free Mindfulness Project",
+      "duration_seconds": null,
+      "category": "body-scan",
+      "language": "en",
+      "path": null,
+      "source_url": "https://www.freemindfulness.org/download",
+      "license": "unknown",
+      "license_status": "pending-review",
+      "attribution": null,
+      "notes": "EJ NEDLADDAD. Kontrollera licens och tillstånd manuellt innan import. Sidan listar bidragsgivare med olika villkor.",
+      "added": "2026-05-07"
+    },
+    {
+      "id": "external-uclahealth-example",
+      "title": "Exempel: UCLA Mindful — Breathing Meditation",
+      "teacher": "UCLA Mindful Awareness Research Center",
+      "source": "UCLA Health",
+      "duration_seconds": null,
+      "category": "breath",
+      "language": "en",
+      "path": null,
+      "source_url": "https://www.uclahealth.org/programs/marc/free-guided-meditations",
+      "license": "unknown",
+      "license_status": "pending-review",
+      "attribution": null,
+      "notes": "EJ NEDLADDAD. UCLA tillhandahåller fria spår men användning utanför personligt bruk kräver granskning av deras villkor.",
+      "added": "2026-05-07"
+    }
+  ]
+}
